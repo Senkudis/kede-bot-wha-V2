@@ -423,7 +423,5 @@ client.on('message', async (msg) => {
     }
     
     // 9. بدء تشغيل العميل
-    client.initialize();
 });
-
 client.initialize();
