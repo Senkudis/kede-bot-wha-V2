@@ -191,7 +191,7 @@ function getCommandsList() {
 }
 
 // ===== 5. إعداد العميل والجدولة =====
-/const client = new Client({
+const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
