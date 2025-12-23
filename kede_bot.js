@@ -33,17 +33,16 @@ if (!MONGO_URI) {
 }
 
 // تعريف نموذج البيانات (BotData)
+// التعديل الأول: تغيير نوع البيانات لمصفوفة
 const BotDataSchema = new mongoose.Schema({
-    // نستخدم ID ثابت لضمان وجود مستند واحد فقط للبيانات العامة
-    _id: { type: Number, default: 1 }, 
+    _id: { type: Number, default: 1 },
     subscribers: { type: [String], default: [] },
     pendingQuiz: { type: Object, default: {} },
     pendingGames: { type: Object, default: {} },
-    // إحصائيات المجموعات (سنحتفظ بها كـ Map لتسهيل التحديث)
-    groupStats: { type: Map, of: Object, default: {} }, 
+    groupStats: { type: Array, default: [] }, // 👈 بقينا نستخدم Array بدل Map
     welcomedChatsPrivate: { type: [String], default: [] },
     welcomedChatsGroups: { type: [String], default: [] },
-}, { timestamps: true });
+}, { timestamps: true, strict: false }); // 👈 strict: false مهمة جداً
 
 const BotData = mongoose.model('BotData', BotDataSchema);
 
@@ -291,32 +290,38 @@ client.on('message', async (msg) => {
     if (from === 'status@broadcast') return;
 
     // 1. تجميع إحصائيات القروب
+    // التعديل الثاني: منطق حفظ الرسائل الجديد
     if (msg.from.endsWith('@g.us')) {
         const chat = await msg.getChat();
-        // استخدام get/set للتعامل مع Map في Mongoose
-        let g = data.groupStats.get(from);
-        if (!g) {
-            g = { messages: {}, createdTimestamp: chat.createdTimestamp || Date.now() };
-            data.groupStats.set(from, g);
+        
+        // البحث عن القروب داخل المصفوفة
+        let groupObj = data.groupStats.find(g => g.id === from);
+        
+        if (!groupObj) {
+            groupObj = { 
+                id: from, 
+                messages: {}, 
+                createdTimestamp: chat.createdTimestamp || Date.now() 
+            };
+            data.groupStats.push(groupObj);
         }
         
         const author = msg.author || from;
-        g.messages[author] = (g.messages[author] || 0) + 1;
-        data.groupStats.set(from, g); // إعادة تعيين القيمة بعد التعديل
+        // 👇 دي الحركة السحرية: استبدال النقطة بشرطة سفلية عشان ما تعمل مشاكل
+        const safeAuthor = author.replace(/\./g, '_'); 
+        
+        groupObj.messages[safeAuthor] = (groupObj.messages[safeAuthor] || 0) + 1;
+        
+        // تنبيه الداتابيس إن المصفوفة تعدلت
+        data.markModified('groupStats');
         await saveData(data);
         
-        // ترحيب القروب لأول مرة
+        // كود الترحيب (زي ما هو)
         if (!data.welcomedChatsGroups.includes(from)) {
             data.welcomedChatsGroups.push(from);
+            data.markModified('welcomedChatsGroups'); // لضمان الحفظ
             await saveData(data);
             await chat.sendMessage(getCommandsList());
-        }
-    } else {
-        // ترحيب الخاص لأول مرة
-        if (!data.welcomedChatsPrivate.includes(from)) {
-            data.welcomedChatsPrivate.push(from);
-            await saveData(data);
-            await msg.reply(getCommandsList());
         }
     }
 
@@ -403,26 +408,24 @@ client.on('message', async (msg) => {
     }
     
     // 7. إحصائيات القروب
+   // التعديل الثالث: قراءة الإحصائيات من المصفوفة
     if (body === 'احصائيات' && msg.from.endsWith('@g.us')) {
-        const groupStats = data.groupStats.get(from);
-        if (!groupStats) return msg.reply('مافي إحصائيات لسه، ابدأوا الونسة!');
+        const groupObj = data.groupStats.find(g => g.id === from);
+        if (!groupObj || !groupObj.messages) return msg.reply('مافي بيانات لسه، ابدأوا الونسة!');
         
-        const messages = groupStats.messages;
-        const sorted = Object.entries(messages).sort(([, a], [, b]) => b - a);
+        const sorted = Object.entries(groupObj.messages).sort(([, a], [, b]) => b - a);
         
         let statsText = '*📊 إحصائيات تفاعل القروب:*\n\n';
         
         for (let i = 0; i < Math.min(5, sorted.length); i++) {
-            const [id, count] = sorted[i];
-            const name = await getContactNameOrNumber(id);
+            let [safeId, count] = sorted[i];
+            let realId = safeId.replace(/_/g, '.'); // ترجيع النقطة عشان نجيب الاسم صح
+            const name = await getContactNameOrNumber(realId);
             statsText += `${i + 1}. ${name}: ${count} رسالة\n`;
         }
         
-        statsText += `\nالقروب اتعمل في: ${new Date(groupStats.createdTimestamp * 1000).toLocaleDateString('ar-SD')}`;
-        
         return msg.reply(statsText);
     }
-    
     // 8. أوامر أخرى (التاريخ)
     if (body === 'التاريخ') {
         const date = new Date().toLocaleDateString('ar-SD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
