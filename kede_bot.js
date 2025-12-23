@@ -25,7 +25,6 @@ app.listen(PORT, () => {
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
     console.error("❌ MONGO_URI غير موجود في ملف .env. لن يتم حفظ البيانات!");
-    // يمكن إيقاف التشغيل هنا إذا كان حفظ البيانات ضرورياً
 } else {
     mongoose.connect(MONGO_URI)
         .then(() => console.log("✅ تم الاتصال بقاعدة بيانات MongoDB."))
@@ -33,24 +32,25 @@ if (!MONGO_URI) {
 }
 
 // تعريف نموذج البيانات (BotData)
-// التعديل الأول: تغيير نوع البيانات لمصفوفة
+// التعديل: تغيير نوع البيانات لمصفوفة وتغيير الـ ID لـ 2 لتجاوز الأخطاء القديمة
 const BotDataSchema = new mongoose.Schema({
-    _id: { type: Number, default: 1 },
+    _id: { type: Number, default: 2 }, // 👈 غيرناه لـ 2 عشان يبدأ صفحة جديدة ونظيفة
     subscribers: { type: [String], default: [] },
     pendingQuiz: { type: Object, default: {} },
     pendingGames: { type: Object, default: {} },
-    groupStats: { type: Array, default: [] }, // 👈 بقينا نستخدم Array بدل Map
+    groupStats: { type: Array, default: [] }, // 👈 مصفوفة بدل Map لحل مشكلة النقطة
     welcomedChatsPrivate: { type: [String], default: [] },
     welcomedChatsGroups: { type: [String], default: [] },
-}, { timestamps: true, strict: false }); // 👈 strict: false مهمة جداً
+}, { timestamps: true, strict: false });
 
 const BotData = mongoose.model('BotData', BotDataSchema);
 
 // دالة لجلب البيانات أو إنشائها إذا لم تكن موجودة
 async function getBotData() {
-    let data = await BotData.findById(1);
+    // 👈 غيرنا البحث عن ID 2
+    let data = await BotData.findById(2);
     if (!data) {
-        data = new BotData({ _id: 1 });
+        data = new BotData({ _id: 2, groupStats: [] });
         await data.save();
     }
     return data;
@@ -59,9 +59,10 @@ async function getBotData() {
 // دالة لحفظ البيانات (تحديث بسيط)
 async function saveData(data) {
     if (MONGO_URI) {
+        // تنبيه الداتابيس أن المصفوفة تغيرت (مهم جداً مع المصفوفات)
+        data.markModified('groupStats');
         await data.save();
     } else {
-        // يمكن إضافة منطق حفظ محلي احتياطي هنا إذا لزم الأمر
         console.warn("⚠️ لم يتم حفظ البيانات لأن MONGO_URI غير متوفر.");
     }
 }
@@ -114,7 +115,7 @@ async function getContactNameOrNumber(id) {
   catch { return id; }
 }
 
-// خدمات API (كما هي)
+// خدمات API
 async function googleTranslate(text, targetLang = 'en') {
     try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
@@ -147,7 +148,7 @@ async function getPollinationsImage(arabicPrompt) {
 async function getWeather(city) {
   try {
     const cityEn = await googleTranslate(city, 'en');
-    const apiKey = '316d0c91eed64b65a15211006251008'; // هذا المفتاح قديم وقد لا يعمل
+    const apiKey = '316d0c91eed64b65a15211006251008'; 
     const resp = await axios.get(`http://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(cityEn)}&lang=ar`);
     const d = resp.data;
     return `الطقس في ${d.location.name}: ${d.current.condition.text}\n🌡️ الحرارة: ${d.current.temp_c}°C\n💧 الرطوبة: ${d.current.humidity}%`;
@@ -161,7 +162,7 @@ async function getPrayerTimes() {
   } catch { return null; }
 }
 
-// قائمة الأوامر (كما هي)
+// قائمة الأوامر
 function getCommandsList() {
   return `🤖 *أوامر كيدي v2.5 (النسخة الكاملة)*
 
@@ -209,7 +210,6 @@ const client = new Client({
 let prayerJobs = [];
 
 async function schedulePrayerReminders() {
-  // يجب جلب البيانات أولاً
   const data = await getBotData();
   
   prayerJobs.forEach(j => j.stop());
@@ -224,8 +224,14 @@ async function schedulePrayerReminders() {
     const [h, m] = times[key].split(':').map(Number);
     const job = cron.schedule(`${m} ${h} * * *`, () => {
       const text = `${pickRandom(prayerReminders)}\n🕒 حان موعد صلاة *${map[key]}*`;
-      // إرسال للمشتركين + القروبات النشطة
-      const allTargets = [...new Set([...data.subscribers, ...data.groupStats.keys()])];
+      
+      // التعديل: جلب المشتركين والقروبات من المصفوفة
+      let groupIds = [];
+      if (Array.isArray(data.groupStats)) {
+          groupIds = data.groupStats.map(g => g.id);
+      }
+      
+      const allTargets = [...new Set([...data.subscribers, ...groupIds])];
       allTargets.forEach(id => client.sendMessage(id, text).catch(()=>{}));
     }, { timezone: 'Africa/Khartoum' });
     prayerJobs.push(job);
@@ -253,13 +259,10 @@ cron.schedule('0 20 * * *', async () => {
 client.on('qr', async qr => {
     try {
         console.log('📌 تم توليد QR — جارٍ رفعه...');
-        // استخدام QR Code to Data URL لتجنب حفظ الملفات على نظام الملفات
         const qrDataUrl = await QRCode.toDataURL(qr);
         console.log('Scan the QR code found in the console (Data URL).');
         
-        // رفع الصورة إذا توفر المفتاح
         if (IMGBB_KEY) {
-            // تحويل Data URL إلى Buffer
             const base64Image = qrDataUrl.split(';base64,').pop();
             const form = new FormData();
             form.append('image', base64Image);
@@ -275,26 +278,23 @@ client.on('qr', async qr => {
     } catch (err) { console.error('❌ خطأ رفع QR:', err); }
 });
 
-
 client.on('ready', async () => {
     console.log('✅ كيدي جاهز!');
-    // جلب البيانات وتخزينها مؤقتاً
     botDataCache = await getBotData();
     schedulePrayerReminders();
 });
 
 client.on('message', async (msg) => {
-    const data = botDataCache || await getBotData(); // استخدام الكاش أو الجلب
+    const data = botDataCache || await getBotData(); 
     const from = msg.from;
     const body = msg.body.trim();
     if (from === 'status@broadcast') return;
 
-    // 1. تجميع إحصائيات القروب
-    // التعديل الثاني: منطق حفظ الرسائل الجديد
+    // 1. تجميع إحصائيات القروب (الكود المعدل لحل المشكلة)
     if (msg.from.endsWith('@g.us')) {
         const chat = await msg.getChat();
         
-        // البحث عن القروب داخل المصفوفة
+        // البحث عن القروب داخل المصفوفة (Array)
         let groupObj = data.groupStats.find(g => g.id === from);
         
         if (!groupObj) {
@@ -307,19 +307,17 @@ client.on('message', async (msg) => {
         }
         
         const author = msg.author || from;
-        // 👇 دي الحركة السحرية: استبدال النقطة بشرطة سفلية عشان ما تعمل مشاكل
+        // 👇 الحركة السحرية: استبدال النقطة بشرطة سفلية عشان ما تعمل مشاكل مع Mongoose
         const safeAuthor = author.replace(/\./g, '_'); 
         
         groupObj.messages[safeAuthor] = (groupObj.messages[safeAuthor] || 0) + 1;
         
-        // تنبيه الداتابيس إن المصفوفة تعدلت
-        data.markModified('groupStats');
+        // حفظ البيانات
         await saveData(data);
         
-        // كود الترحيب (زي ما هو)
+        // كود الترحيب
         if (!data.welcomedChatsGroups.includes(from)) {
             data.welcomedChatsGroups.push(from);
-            data.markModified('welcomedChatsGroups'); // لضمان الحفظ
             await saveData(data);
             await chat.sendMessage(getCommandsList());
         }
@@ -377,7 +375,7 @@ client.on('message', async (msg) => {
         return msg.reply(weatherText);
     }
     
-    // 6. الألعاب (مثال: خمن الرقم)
+    // 6. الألعاب
     if (body === 'العب رقم') {
         const gameId = from;
         const target = Math.floor(Math.random() * 10) + 1;
@@ -407,9 +405,9 @@ client.on('message', async (msg) => {
         }
     }
     
-    // 7. إحصائيات القروب
-   // التعديل الثالث: قراءة الإحصائيات من المصفوفة
+    // 7. إحصائيات القروب (الكود المعدل لقراءة المصفوفة)
     if (body === 'احصائيات' && msg.from.endsWith('@g.us')) {
+        // البحث في المصفوفة
         const groupObj = data.groupStats.find(g => g.id === from);
         if (!groupObj || !groupObj.messages) return msg.reply('مافي بيانات لسه، ابدأوا الونسة!');
         
@@ -419,19 +417,22 @@ client.on('message', async (msg) => {
         
         for (let i = 0; i < Math.min(5, sorted.length); i++) {
             let [safeId, count] = sorted[i];
-            let realId = safeId.replace(/_/g, '.'); // ترجيع النقطة عشان نجيب الاسم صح
+            // ترجيع النقطة عشان نجيب الاسم صح
+            let realId = safeId.replace(/_/g, '.'); 
             const name = await getContactNameOrNumber(realId);
             statsText += `${i + 1}. ${name}: ${count} رسالة\n`;
         }
         
         return msg.reply(statsText);
     }
-    // 8. أوامر أخرى (التاريخ)
+    
+    // 8. أوامر أخرى
     if (body === 'التاريخ') {
         const date = new Date().toLocaleDateString('ar-SD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         return msg.reply(`اليوم هو: ${date}`);
     }
-    
-    // 9. بدء تشغيل العميل
-});
+
+}); // إغلاق دالة message
+
+// تشغيل البوت (مرة واحدة فقط هنا)
 client.initialize();
