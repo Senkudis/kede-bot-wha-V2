@@ -88,12 +88,12 @@ const triviaQuestions = [
 ];
 
 const prayerReminders = [
-  "قوموا يا عباد الله إلى الصلاة 🙏",
+  "قوموا يا عباد الله إلى الصلاة ",
   "حيّ على الصلاة، حيّ على الفلاح 🕌",
   "الله أكبر، وقت السجود قد حان 🕋",
   "الصلاة نور وراحة للروح، لا تفوّتوها",
   "هلمّوا إلى ذكر الله ولقاء الرحمن",
-  "أقم الصلاة لذكري، وارتاح قلبك"
+  "أقم الصلاة لذكر الله، وارح قلبك"
 ];
 
 const greetings = ["صباح الخير يا زول! 🌞", "صبحك الله بالخير!", "صباح النور يا الغالي!"];
@@ -191,15 +191,22 @@ function getCommandsList() {
 }
 
 // ===== 5. إعداد العميل والجدولة =====
-// ملاحظة: LocalAuth يستخدم نظام الملفات. إذا كانت الاستضافة لا تدعم persistence، يجب استخدام MongoStore
-const client = new Client({
-    authStrategy: new LocalAuth(), 
+/const client = new Client({
+    authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process', '--no-zygote'],
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process', 
+            '--disable-gpu'
+        ]
     }
 });
-
 let prayerJobs = [];
 
 async function schedulePrayerReminders() {
