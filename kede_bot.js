@@ -96,14 +96,14 @@ const prayerReminders = [
   "أقم الصلاة لذكر الله، وارح قلبك"
 ];
 
-const greetings = ["صباح الخير يا زول! 🌞", "صبحك الله بالخير!", "صباح النور يا الغالي!"];
+const greetings = ["صباح الخير يا زول! 🌞", "صبحكم الله بالخير!", "صباح النور يا الغوالي!"];
 
 // شخصية البوت
 const BOT_PERSONA = `
 تعليمات النظام:
 1. اسمك "كيدي" (Kede).
 2. المطور هو "ضياء الدين ابراهيم".
-3. تتحدث باللهجة السودانية (يا زول، حبابك، أبشر).
+3.تتحدث باللهجة السودانية (يا زول، حبابك، أبشر ،قدام).
 4. كن مرحاً ومفيداً.
 `;
 
@@ -164,7 +164,7 @@ async function getPrayerTimes() {
 
 // قائمة الأوامر
 function getCommandsList() {
-  return `🤖 *أوامر كيدي v2.5 (النسخة الكاملة)*
+  return `🤖 *أوامر كيدي*
 
 🕌 *الدين والتذكيرات:*
 - اشترك: تفعيل تذكيرات الصلاة
@@ -176,7 +176,7 @@ function getCommandsList() {
 - حجر، ورق، مقص
 
 🧠 *الذكاء:*
-- ذكاء [سؤال]: ونسة مع كيدي
+- كيدي [سؤال]: ونسة مع كيدي
 - تخيل [وصف]: رسم صور (يدعم العربي)
 - ترجم [نص]: ترجمة 
 
@@ -342,19 +342,52 @@ client.on('message', async (msg) => {
 
     // 3. الأوامر العامة
     if (body === 'اوامر') return msg.reply(getCommandsList());
-    if (body === 'كيدي') return msg.reply(pickRandom(["حبابك يا زول!", "آمرني!", "موجود، كيف أقدر أخدمك؟"]));
+    if (body === 'كيدي') return msg.reply(pickRandom(["حبابك", "جنبك", "موجود، كيف أقدر أخدمك؟"]));
     
     // 4. الترفيه والنكت
     if (body === 'نكتة') return msg.reply(pickRandom(jokes));
     
-    // 5. الذكاء الاصطناعي والخدمات
-    if (body.startsWith('ذكاء')) {
-        const prompt = body.substring(4).trim();
-        if (!prompt) return msg.reply('أمرني يا زول، أسألني أي حاجة!');
-        const response = await getPollinationsText(prompt);
-        return msg.reply(response);
+async function getPollinationsText(userText, history = []) {
+    try {
+        console.log("⏳ 1. دخلنا دالة الذكاء الاصطناعي...");
+
+        let historyPrompt = history.map(m => `${m.role === 'user' ? 'المستخدم' : 'كيدي'}: ${m.content}`).join('\n');
+        const fullPrompt = `${BOT_PERSONA}\n\n${historyPrompt}\nالمستخدم: ${userText}\nكيدي:`;
+
+        console.log("🚀 2. جاري الإرسال لسيرفر Pollinations...");
+
+        // حددنا مهلة 15 ثانية بس عشان لو علق يفصل ويديك خبر
+        const response = await axios.post('https://text.pollinations.ai/', {
+            messages: [
+                { role: 'user', content: fullPrompt }
+            ],
+            model: 'openai' 
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000 // 15 ثانية فقط
+        });
+
+        console.log("✅ 3. الرد وصل!");
+        
+        // استخراج الرد بحذر
+        let reply = response.data;
+        if (typeof reply === 'object') {
+             reply = reply.choices ? reply.choices[0].message.content : JSON.stringify(reply);
+        }
+
+        return reply;
+
+    } catch (error) {
+        console.log("❌ حصل خطأ:");
+        if (error.code === 'ECONNABORTED') {
+            console.log("⏰ الوقت انتهى! السيرفر اتأخر في الرد.");
+            return "معليش، النت شكلو تقيل، السيرفر اتأخر في الرد.";
+        }
+        console.error(error.message);
+        return "في مشكلة في الاتصال بالذكاء الاصطناعي حالياً.";
     }
-    
+}
+
     if (body.startsWith('تخيل')) {
         const prompt = body.substring(4).trim();
         if (!prompt) return msg.reply('أديني وصف عشان أرسم ليك صورة!');
