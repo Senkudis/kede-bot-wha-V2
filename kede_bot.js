@@ -33,7 +33,7 @@ if (!Array.isArray(data.welcomedChatsGroups)) data.welcomedChatsGroups = [];
 saveData();
 
 // ===== 2. الإعدادات والمتغيرات =====
-const IMGBB_KEY = process.env.IMGBB_KEY; // تأكد من وجود هذا في ملف .env
+const IMGBB_KEY = process.env.IMGBB_KEY; 
 
 // ===== 2. البيانات الثابتة (النكت، الأسئلة، التذكيرات) =====
 const jokes = [
@@ -110,7 +110,6 @@ async function getPollinationsText(userText, history = []) {
 
         console.log("🚀 2. جاري الإرسال لسيرفر Pollinations...");
 
-        // حددنا مهلة 15 ثانية بس عشان لو علق يفصل ويديك خبر
         const response = await axios.post('https://text.pollinations.ai/', {
             messages: [
                 { role: 'user', content: fullPrompt }
@@ -118,12 +117,11 @@ async function getPollinationsText(userText, history = []) {
             model: 'openai' 
         }, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 15000 // 15 ثانية فقط
+            timeout: 15000 
         });
 
         console.log("✅ 3. الرد وصل!");
         
-        // استخراج الرد بحذر
         let reply = response.data;
         if (typeof reply === 'object') {
              reply = reply.choices ? reply.choices[0].message.content : JSON.stringify(reply);
@@ -145,7 +143,6 @@ async function getPollinationsText(userText, history = []) {
 async function getPollinationsImage(arabicPrompt, styleSuffix = '') {
     try {
         const englishPrompt = await googleTranslate(arabicPrompt, 'en') + styleSuffix;
-        // التعديل هنا: استخدام موديل nano-banana
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?model=nano-banana`;
         
         const response = await axios.get(url, { responseType: 'arraybuffer' });
@@ -215,34 +212,28 @@ cron.schedule('0 8 * * *', () => {
     data.subscribers.forEach(id => client.sendMessage(id, text).catch(()=>{}));
 }, { timezone: 'Africa/Khartoum' });
 
-// رسالة مسائية (كما كانت في الكود الأصلي)
+// رسالة مسائية
 cron.schedule('0 20 * * *', () => {
     data.subscribers.forEach(id => client.sendMessage(id, "مساء الخير! اكتب 'نكتة' عشان نضحك.").catch(()=>{}));
 }, { timezone: 'Africa/Khartoum' });
 
 // معالجة QR Code
-// ===== استبدل دالة الـ QR بهذا الكود =====
-
-// معالجة QR Code
 client.on('qr', async qr => {
     try {
         console.log('📌 تم توليد QR — جارٍ رفعه...');
+        // يمكنك استخدام QRCode.toString(qr, {type:'terminal'}) هنا لو الرفع فشل
         const qrPath = path.join(__dirname, 'qr.png');
         await QRCode.toFile(qrPath, qr);
         console.log('Scan the QR code found in root folder: qr.png');
         
-        // رفع الصورة إذا توفر المفتاح
         if (IMGBB_KEY) {
             const form = new FormData();
             form.append('image', fs.createReadStream(qrPath));
             const resp = await axios.post(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, form, { headers: form.getHeaders() });
             if (resp.data?.data?.url) console.log('✅ رابط الـ QR:', resp.data.data.url);
         }
-        // حذف الملف لاحقاً (اختياري، تركته لكي تراه)
-        // fs.unlinkSync(qrPath); 
     } catch (err) { console.error('❌ خطأ رفع QR:', err); }
 });
-
 
 client.on('ready', () => {
     console.log('✅ كيدي جاهز!');
@@ -284,11 +275,12 @@ client.on('message', async (msg) => {
     const body = msg.body.trim();
     if (from === 'status@broadcast') return;
 
-    // 1. تجميع إحصائيات القروب (من الكود الأصلي)
+    // 1. تجميع إحصائيات القروب
     if (msg.from.endsWith('@g.us')) {
         const chat = await msg.getChat();
         const g = data.groupStats[from] ||= { messages: {}, createdTimestamp: chat.createdTimestamp || Date.now() };
-        const author = msg.author || from;
+        // استبدال النقطة بـ _ عشان مونجو ما يزعل (لو بتستخدم مونجو مستقبلاً)
+        const author = (msg.author || from).replace(/\./g, '_');
         g.messages[author] = (g.messages[author] || 0) + 1;
         saveData();
         
@@ -333,19 +325,12 @@ client.on('message', async (msg) => {
         const userQuery = body.slice(5).trim();
         if (!userQuery) return msg.reply('يا زول، أسألني سؤال عشان أجاوبك!');
 
-        // 1. جلب سجل المحادثة
         const chatHistory = data.conversationHistory[from] || [];
-        
-        // 2. استدعاء الذكاء الاصطناعي مع سجل المحادثة
         const res = await getPollinationsText(userQuery, chatHistory);
         
-        // 3. تحديث سجل المحادثة
-        // إضافة رسالة المستخدم
         chatHistory.push({ role: 'user', content: userQuery });
-        // إضافة رد البوت
         chatHistory.push({ role: 'bot', content: res });
         
-        // الاحتفاظ بآخر 5 دورات (10 رسائل)
         while (chatHistory.length > 10) {
             chatHistory.shift();
         }
@@ -361,20 +346,15 @@ client.on('message', async (msg) => {
     
    if (body === 'معلومة') {
         const facts = [
-            // معلومات سودانية 🇸🇩
             "السودان يمتلك أهرامات أكثر من مصر (أكثر من 200 هرم) في منطقة مروي والبجراوية.",
             "تعتبر منطقة 'المقرن' في الخرطوم النقطة التي يلتقي فيها النيل الأبيض بالنيل الأزرق ليشكلوا نهر النيل العظيم.",
             "أول امرأة برلمانية في أفريقيا والشرق الأوسط كانت سودانية، وهي الأستاذة فاطمة أحمد إبراهيم.",
             "محمية الدندر في السودان تعتبر واحدة من أكبر المحميات الطبيعية في أفريقيا.",
-
-            // معلومات علمية 🧬
             "العسل هو الطعام الوحيد الذي لا يفسد أبداً؛ يمكن لأي شخص أكل عسل عمره 3000 سنة!",
             "حيوان الأخطبوط لديه ثلاثة قلوب وتعة عقول، ودمه لونه أزرق.",
             "قلب الحوت الأزرق ضخم جداً لدرجة أن الإنسان يمكنه السباحة داخل شرايينه.",
             "كوكب الزهرة هو الكوكب الوحيد الذي يدور في اتجاه عقارب الساعة (عكس باقي الكواكب).",
             "عدد النجوم في الكون أكثر من عدد حبات الرمل الموجودة على كل شواطئ الأرض.",
-
-            // معلومات غريبة وعامة 🌍
             "أقصر حرب في التاريخ كانت بين بريطانيا وزنجبار عام 1896، واستمرت 38 دقيقة فقط.",
             "مؤسس شركة أبل (ستيف جوبز) كان والده البيولوجي سورياً من مدينة حمص.",
             "عين النعامة أكبر من دماغها.",
@@ -386,21 +366,16 @@ client.on('message', async (msg) => {
 
    if (body === 'اقتباس') {
         const quotes = [
-            // تحفيز وإيجابية ✨
             "السقوط ليس فشلاً، الفشل هو أن تبقى حيث سقطت.",
             "لا تؤجل عمل اليوم إلى الغد، فالفرص لا تنتظر.",
             "النجاح هو أن تنتقل من فشل إلى فشل دون أن تفقد حماسك.",
             "كن أنت التغيير الذي تريد أن تراه في العالم.",
             "عامل الناس بأخلاقك لا بأخلاقهم.",
-
-            // حكم وأمثال عربية 📜
             "من جد وجد، ومن زرع حصد.",
             "الوقت كالسيف، إن لم تقطعه قطعك.",
             "خير الكلام ما قل ودل.",
             "إذا هبت رياحك فاغتنمها.",
             "العلم في الصغر كالنقش على الحجر.",
-
-            // نكهة سودانية وكلام من القلب 🇸🇩❤️
             "يا زول، الدنيا دي ما بتستاهل، اضحك وعيش.",
             "الفي إيدو القلم ما بكتب على روحو شقي.",
             "مد رجليك قدر لحافك.",
@@ -410,7 +385,7 @@ client.on('message', async (msg) => {
         return msg.reply(pickRandom(quotes));
     }
 
-    // 5. الألعاب (من الكود الأصلي)
+    // 5. الألعاب
     if (body === 'العب رقم') {
         data.pendingGames[from] = { type: 'guess', number: Math.floor(Math.random()*10)+1, tries: 0 };
         saveData();
@@ -455,8 +430,7 @@ client.on('message', async (msg) => {
         return msg.reply(`أنا اخترت: ${botC}\nالنتيجة: ${res}`);
     }
 
-    // 6. الذكاء والخدمات (تم إلغاء أمر "ذكاء" واستبداله بـ "كيدي [سؤال]")
-
+    // 6. الذكاء والخدمات
     if (body.startsWith('تخيل ')) {
         const promptText = body.slice(5).trim();
         if (!promptText) return msg.reply('يا زول، أديني وصف عشان أقدر أتخيل!');
@@ -464,13 +438,12 @@ client.on('message', async (msg) => {
         let styleSuffix = '';
         let finalPrompt = promptText;
         
-        // البحث عن نمط في نهاية الوصف
         const parts = promptText.split(/\s+/);
         const lastWord = parts[parts.length - 1].toLowerCase();
         
         if (IMAGE_STYLES[lastWord]) {
             styleSuffix = IMAGE_STYLES[lastWord];
-            finalPrompt = parts.slice(0, -1).join(' '); // إزالة الكلمة الأخيرة (النمط) من الوصف
+            finalPrompt = parts.slice(0, -1).join(' ');
         }
 
         await msg.reply('🎨 جاري الرسم...');
@@ -484,7 +457,6 @@ client.on('message', async (msg) => {
 
     if (body.startsWith('ترجم ')) return msg.reply(await googleTranslate(body.slice(5)));
     
-    // الأمر الجديد: تحليل/تلخيص
     if (body.startsWith('حلل ')) {
         const textToAnalyze = body.slice(4).trim();
         if (!textToAnalyze && !msg.hasMedia) return msg.reply('يا زول، أديني نص أو صورة عشان أحللها!');
@@ -493,8 +465,6 @@ client.on('message', async (msg) => {
         let content = '';
         
         if (msg.hasMedia) {
-            // لا يمكن تحليل الصور مباشرة عبر API المستخدم (Pollinations)
-            // لذا سنطلب من المستخدم وصف الصورة أو تلخيصها
             analysisPrompt = 'أرجو وصف الصورة المرفقة أو تلخيص محتواها.';
             content = 'صورة مرفقة';
             return msg.reply('معليش يا زول، حالياً ما بقدر أحلل الصور مباشرة. ممكن توصف لي الصورة أو تلخص النص المرفق؟');
@@ -504,8 +474,6 @@ client.on('message', async (msg) => {
         }
 
         await msg.reply('🧠 جاري التحليل...');
-        
-           // نستخدم دالة الذكاء النصي الموجودة
         const res = await getPollinationsText(analysisPrompt);
         return msg.reply(res);
     }
@@ -517,11 +485,10 @@ client.on('message', async (msg) => {
         return msg.reply(`📅 التاريخ: ${d.toLocaleDateString('en-GB')}`);
     }
 
-    // 7. إحصائيات القروب
-if (body === 'احصائيات') {
+    // 7. إحصائيات القروب (مع التاق ✅)
+    if (body === 'احصائيات') {
         if (!msg.from.endsWith('@g.us')) return msg.reply('الميزة دي للقروبات بس.');
 
-        // التأكد من جلب البيانات (سواء كانت مصفوفة أو أوبجكت حسب آخر تعديل)
         let stats = {};
         if (Array.isArray(data.groupStats)) {
              const groupObj = data.groupStats.find(g => g.id === from);
@@ -534,21 +501,17 @@ if (body === 'احصائيات') {
         if (!sorted.length) return msg.reply('لسه مافي بيانات كفاية.');
 
         let report = '📊 *توب 5 أعضاء متفاعلين:*\n';
-        let mentions = []; // 1. مصفوفة لتخزين جهات الاتصال للمنشن
+        let mentions = [];
         let rank = 1;
 
         for (const [id, count] of sorted) {
-            // استرجاع النقطة للآيدي عشان الواتساب يتعرف عليه (لأننا خزنناه بشرطة سفلية)
+            // استرجاع النقطة للآيدي عشان الواتساب يتعرف عليه
             const realId = id.replace(/_/g, '.'); 
             
             try {
-                // جلب كائن جهة الاتصال
                 const contact = await client.getContactById(realId);
-                mentions.push(contact); // إضافته لقائمة المنشن
-
+                mentions.push(contact); 
                 const number = realId.split('@')[0];
-                
-                // 2. استخدام الصيغة @Number لعمل التاق
                 report += `${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🎖️'} @${number} : ${count} رسالة\n`;
             } catch (e) {
                 report += `${rank} - ${realId} : ${count}\n`;
@@ -556,9 +519,10 @@ if (body === 'احصائيات') {
             rank++;
         }
 
-        // 3. إرسال الرسالة مع خاصية mentions
         return msg.reply(report, undefined, { mentions: mentions });
     }
+
+}); // <--- 🔥 تم إضافة القوس الناقص هنا عشان الكود يشتغل صح 🔥
 
 // ترحيب بالأعضاء الجدد في القروبات
 client.on('group_join', async (notification) => {
